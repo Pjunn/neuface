@@ -122,7 +122,7 @@ python ./neuface_optim.py --cfg configs/neuface_celebv.yml --test_seq_path $DATA
 chmod +x ./mead_construct_neuface_dataset.sh
 ./mead_construct_neuface_dataset.sh
 ```
-You'll need to add your preferred IDs [in the script]().
+You'll need to add your preferred IDs [in the script](https://github.com/kaist-ami/NeuFace/blob/2028f5f92a82bd28d590d22e8fd3fb74131dfd96/mead_construct_neuface_dataset.sh#L8).
 - To process all the videos in CelebV-HQ dataset, make sure you downloaded all the videos. Then, run this script:
 ```bash
 chmod +x ./celebv_construct_neuface_dataset.sh
