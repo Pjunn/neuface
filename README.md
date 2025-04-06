@@ -62,7 +62,7 @@ $DATA_DIR
 
 ## Run NeuFace Optimization
 1. **Extract Frames from Videos**
-- For MEAD dataset, run this script to extract frames. Currently, the script is for the MEAD ID W024. To process other IDs, please modify the [INPUT_DIR]() and [OUTPUT_DIR]() accordingly. 
+- For MEAD dataset, run this script to extract frames. Currently, the script is for the MEAD ID W024. To process other IDs, please modify the [INPUT_DIR](https://github.com/kaist-ami/NeuFace/blob/9d35981421fdc554309126aa36d2a584738500c0/extract_mead_frames.sh#L5) and [OUTPUT_DIR](https://github.com/kaist-ami/NeuFace/blob/9d35981421fdc554309126aa36d2a584738500c0/extract_mead_frames.sh#L6) accordingly. 
 ```bash
 # This shell script processes W024 ID in MEAD dataset. 
 # Please change the INPUT_DIR and OUTPUT_DIR in the script, if you process different IDs. 
