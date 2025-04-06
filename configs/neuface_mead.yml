@@ -1,0 +1,28 @@
+output_dir: "./neuface_output"
+
+dataset:
+  batch_size: 140  # MEAD: batch_size = frames * views (e.g. 20frames * 7 views = 140)
+  num_workers: 0
+
+fit:
+  max_steps: 100
+  log_steps: 10
+  vis_steps: 30
+  write_summary: False # tracking with wandb
+  save_train_img: False
+  save_fit_img: False # whether to save final inference images
+  save_fit_video: False # whether to save final inference videos / save_fit_img must be True!
+  save_fit_flame: True # whether to save FLAME parameters
+  checkpoint_steps: 100
+  dataset: 'MEAD'
+
+loss:
+  # 2D landmark loss
+  lmk: 10.0
+  useWlmk: False
+  # Temporal Loss
+  temporal: True
+  temp_weight: 100.0
+  # Spatial Loss
+  spatial_weight: 200.0
+  spatial_sample: True
