@@ -38,6 +38,7 @@ def efficient_spatial_consistency_loss(
     all_loss = 0.0
 
     # select views for same timestep
+    # frame을 sampling 한다.
     if sampling:
         sample_num = 5
         sample_idx = torch.randperm(len(verts))[:sample_num]
@@ -48,11 +49,12 @@ def efficient_spatial_consistency_loss(
 
     for verts_frame, sim_frame in zip(verts[sample_idx], sim[sample_idx]):
         # weighted sum the visibility
+        # [7, 5023, 3], [7, 5023]
         sim_frame_ = util_s.softmax(sim_frame, verts_frame)
-        merged_verts = torch.sum(verts_frame * sim_frame_.unsqueeze(2), axis=0)
+        merged_verts = torch.sum(verts_frame * sim_frame_.unsqueeze(2), axis=0) # 잘보이는 vertics의 위치로 가중합, [5023, 3]
 
-        merged_verts = merged_verts.tile(sim_frame_.shape[0], 1, 1)
-        all_loss += criterion(merged_verts, verts_frame)
+        merged_verts = merged_verts.tile(sim_frame_.shape[0], 1, 1) # [7, 5023, 3]
+        all_loss += criterion(merged_verts, verts_frame) # 평균 좌표랑 비슷하게 
 
     return all_loss / div_factor
 
@@ -174,10 +176,10 @@ def batch_kp_2d_l1_loss(real_2d_kp, predicted_2d_kp, weights=None):
         real_2d_kp[:, :, 2] = weights[None, :] * real_2d_kp[:, :, 2]
     kp_gt = real_2d_kp.view(-1, 3)
     kp_pred = predicted_2d_kp.contiguous().view(-1, 2)
-    vis = kp_gt[:, 2]
+    vis = kp_gt[:, 2] # 가시성
     k = torch.sum(vis) * 2.0 + 1e-8
     dif_abs = torch.abs(kp_gt[:, :2] - kp_pred).sum(1)
-    return torch.matmul(dif_abs, vis) * 1.0 / k
+    return torch.matmul(dif_abs, vis) * 1.0 / k # 가시성 기반 정규화, 이미지마다 보이는 keypoint 개수가 다를수 있음.
 
 
 def landmark_loss(predicted_landmarks, landmarks_gt, weight=1.):
