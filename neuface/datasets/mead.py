@@ -132,7 +132,7 @@ class MEAD(Dataset):
         multiview_ori_image = []
         multiview_kpt = []
 
-        imagename_original = os.path.splitext(os.path.split(imagepath)[-1])[0] # 앞 경로 빼고 이미지 이름만
+        imagename_original = os.path.splitext(os.path.split(imagepath)[-1])[0] # 앞 경로 빼고 이미지 이름만, 확장자도 없음.
         image = np.array(imread(imagepath))
 
         multiview_imagepath.append(imagepath)

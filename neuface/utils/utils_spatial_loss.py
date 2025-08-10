@@ -135,7 +135,7 @@ def softmax(sim, vertices, T=0.1):
     sim_ = sim.clone()
     sim_[sim_==0]=-100
 
-    sim_ = softmax(sim_.T/T) # [5023, 7], camera로 봤을때 잘보이는 view에 가중치 높게주는 분포 만들기
+    sim_ = softmax(sim_.T/T) # [5023, 7], 한 프레임에 대해서 camera로 봤을때 잘보이는 view에 가중치 높게주는 분포 만들기
     sim_ = sim_.T
 
     return sim_

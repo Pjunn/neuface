@@ -441,7 +441,120 @@ class SRenderY(nn.Module):
         alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
         depth_images = rendering[:, :1, :, :]
         return depth_images
-    
+
+    def render_real_depth(self, transformed_vertices):
+        '''
+        -- rendering real depth
+        '''
+        batch_size = transformed_vertices.shape[0]
+
+        # z = transformed_vertices[:,:,:].clone()
+        # orginal_min_depth = z[:,:,2].min()
+        # z[:,:,2] = z[:,:,2] - orginal_min_depth # 전부 양수
+        # z = - z[:,:,2:].repeat(1,1,3)
+        # z_min = z.min()
+        # z = z-z_min
+        # z_max = z.max()
+        # z = z/z_max
+
+        # transformed_vertices[:,:,2] = transformed_vertices[:,:,2] - transformed_vertices[:,:,2].min()
+        # z = -transformed_vertices[:,:,2:].repeat(1,1,3).clone()
+        # z = z-z.min()
+        # z = z/z.max()
+
+        z = -transformed_vertices[:,:,2:].repeat(1,1,3).clone()
+        # Attributes
+        attributes = util.face_vertices(z, self.faces.expand(batch_size, -1, -1))
+        # rasterize
+        transformed_vertices_for_rasterizer = transformed_vertices.clone()
+        transformed_vertices_for_rasterizer[:, :, 2] = transformed_vertices_for_rasterizer[:, :, 2] + 10
+        # transformed_vertices[:,:,2] = transformed_vertices[:,:,2] + 10
+        rendering = self.rasterizer(transformed_vertices_for_rasterizer, self.faces.expand(batch_size, -1, -1), attributes)
+
+        ####
+        alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
+        depth_images = rendering[:, :1, :, :]
+
+        depth_images = - depth_images
+
+        return depth_images
+
+    def render_normals(self, vertices, transformed_vertices):
+        batch_size = transformed_vertices.shape[0]
+
+        # Attributes
+        normals = util.vertex_normals(vertices, self.faces.expand(batch_size, -1, -1))
+        face_normals = util.face_vertices(normals, self.faces.expand(batch_size, -1, -1))
+        # rasterize
+        transformed_vertices_for_rasterizer = transformed_vertices.clone()
+        transformed_vertices_for_rasterizer[:, :, 2] = transformed_vertices_for_rasterizer[:, :, 2] + 10
+
+        rendering = self.rasterizer(transformed_vertices_for_rasterizer, self.faces.expand(batch_size, -1, -1),
+                                    face_normals)
+
+        alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
+        normal_images = rendering[:, :3, :, :]
+
+        return normal_images, alpha_images
+
+    def render_normals_with_images(self, vertices, transformed_vertices, images):
+        batch_size = transformed_vertices.shape[0]
+
+        # Attributes
+        normals = util.vertex_normals(vertices, self.faces.expand(batch_size, -1, -1))
+        face_normals = util.face_vertices(normals, self.faces.expand(batch_size, -1, -1))
+        # rasterize
+        transformed_vertices_for_rasterizer = transformed_vertices.clone()
+        transformed_vertices_for_rasterizer[:, :, 2] = transformed_vertices_for_rasterizer[:, :, 2] + 10
+
+        rendering = self.rasterizer(transformed_vertices_for_rasterizer, self.faces.expand(batch_size, -1, -1),
+                                    face_normals)
+        alpha_images = rendering[:, -1, :, :][:, None, :, :].detach()
+        normal_images = rendering[:, :3, :, :]
+
+        alpha_images = alpha_images * 0.7  # TODO - transparency of reconstructed shape / original coefficient = 1.0
+        if images is None:
+            shape_images = normal_images * alpha_images + torch.zeros_like(normal_images).to(vertices.device) * (
+                        1 - alpha_images)
+        else:
+            shape_images = normal_images * alpha_images + images * (1 - alpha_images)
+
+        return shape_images
+
+    def render_eye_mask(self, eye_mask, transformed_vertices):
+        batch_size = transformed_vertices.shape[0]
+
+        eyes_mask = eye_mask.repeat(batch_size, 1, 1) # (bs, 5023, 3)
+        attributes = util.face_vertices(eyes_mask, self.faces.expand(batch_size, -1, -1))
+
+        # rasterize
+        transformed_vertices_for_rasterizer = transformed_vertices.clone()
+        transformed_vertices_for_rasterizer[:, :, 2] = transformed_vertices_for_rasterizer[:, :, 2] + 10
+
+        rendering = self.rasterizer(transformed_vertices_for_rasterizer, self.faces.expand(batch_size, -1, -1),
+                                    attributes)
+        eye_mask_images = rendering[:, :3, :, :]
+
+        return eye_mask_images
+
+    def render_face_mask(self, face_mask, transformed_vertices):
+        batch_size = transformed_vertices.shape[0]
+
+        face_mask = face_mask.repeat(batch_size, 1, 1) # (bs, 5023, 3)
+        attributes = util.face_vertices(face_mask, self.faces.expand(batch_size, -1, -1))
+
+        # rasterize
+        transformed_vertices_for_rasterizer = transformed_vertices.clone()
+        transformed_vertices_for_rasterizer[:, :, 2] = transformed_vertices_for_rasterizer[:, :, 2] + 10
+
+        rendering = self.rasterizer(transformed_vertices_for_rasterizer, self.faces.expand(batch_size, -1, -1),
+                                    attributes)
+        face_mask_images = rendering[:, :3, :, :]
+
+        return face_mask_images
+
+
+
     def render_colors(self, transformed_vertices, colors):
         '''
         -- rendering colors: could be rgb color/ normals, etc

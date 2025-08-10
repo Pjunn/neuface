@@ -21,7 +21,16 @@ def main(cfg):
     eft = NeuFacePipeline(model=deca, config=cfg)
 
     eft.fit(seq_path=cfg.test_seq_path)
+    # eft.recover_and_make_video(seq_path=cfg.test_seq_path, flame_path='/local_data_2/urp25su_jspark/neuface/neuface_noUV_noNormal/MEAD/M013_angry_level_1_001')
+    """
+    M013_angry_level_1_001
+    M019_happy_level_3_003
+    M022_sad_level_2_003
+    W024_surprised_level_2_003
+    """
 
+
+    # eft.save_vectices_numpy(flame_path='/local_data_2/urp25su_jspark/neuface/nersemble_uv100.0_n100.0_l10.0/Nersemble/N017')
 
 if __name__ == '__main__':
     from neuface.utils.config import parse_args

@@ -44,6 +44,13 @@ cfg.model.n_light = 27
 cfg.model.use_tex = True
 cfg.model.jaw_type = 'aa' # default use axis angle, another option: euler. Note that: aa is not stable in the beginning
 
+# uv loss
+cfg.model.VALID_VERTS_NARROW = os.path.join(cfg.deca_dir, 'data', 'uv_valid_verty_noEyes.npy')
+cfg.model.VALID_VERTS = os.path.join(cfg.deca_dir, 'data', 'uv_valid_verty_noEyes_noEyeRegion_debug_wEars.npy')
+cfg.model.FLAME_UV_COORDS = os.path.join(cfg.deca_dir, 'data', 'flame_uv_coords.npy')
+
+# normal
+cfg.model.flame_mask = os.path.join(cfg.deca_dir, 'data', 'FLAME_masks.pkl')
 # face recognition model
 cfg.model.fr_model_path = os.path.join(cfg.deca_dir, 'data', 'resnet50_ft_weight.pkl')
 
@@ -67,7 +74,9 @@ cfg.dataset.image_size = 224
 cfg.dataset.scale_min = 1.4
 cfg.dataset.scale_max = 1.8
 cfg.dataset.trans_scale = 0.
-
+cfg.dataset.view_num = 0
+cfg.dataset.static_crop = True
+cfg.dataset.is_seg = False
 # ---------------------------------------------------------------------------- #
 # Options for training
 # ---------------------------------------------------------------------------- #
@@ -85,7 +94,7 @@ cfg.fit.save_fit_img = True # whether to save final inference iamges
 cfg.fit.save_train_img = True
 cfg.fit.save_fit_flame = False # whether to save FLAME parameters
 cfg.fit.save_fit_video = True # whether to save final inference iamges & videos
-
+cfg.fit.save_extra_viz = False # visualize loss map
 cfg.fit.checkpoint_steps = 100
 cfg.fit.resume = True
 
@@ -159,6 +168,19 @@ cfg.loss.reg_sym = 0.005
 cfg.loss.reg_z = 0.005
 cfg.loss.reg_diff = 0.005
 
+# uv loss
+cfg.loss.uv_map_super = 100.0
+cfg.loss.uv_l2 = True
+
+cfg.loss.stricter_uv_mask = False
+cfg.loss.delta_uv = 0.00005
+cfg.loss.dist_uv = 20
+
+# normal loss
+cfg.loss.normal_super = 100.0
+cfg.loss.normal_l2 = False
+cfg.loss.delta_n = 0.33  # threshold that determines above which loss pixels in the normal loss map are considered outliers
+cfg.loss.normal_mask_ksize = 13
 
 cfg.eval=False
 cfg.test_seq_path = "not this"
@@ -183,6 +205,8 @@ def parse_args():
     parser.add_argument('--cuda_device', type=str, default='0')
     parser.add_argument('--batch_size', type=int, default=None)
     parser.add_argument('--dataset', type=str, default=None)
+    parser.add_argument('--view_num', type=int, default=None)
+    parser.add_argument('--seg', type=bool, default=None)
     args = parser.parse_args()
 
     cfg = get_cfg_defaults()
@@ -206,6 +230,12 @@ def parse_args():
 
     if args.dataset is not None:
         cfg.fit.dataset = args.dataset
+
+    if args.view_num is not None:
+        cfg.dataset.view_num = args.view_num
+
+    if args.seg is not None:
+        cfg.dataset.is_seg = args.seg
 
     print(f"\nConfigurations" + " -"*50)
     print(f"Config File: {cfg.cfg_file}")

@@ -13,6 +13,159 @@ import pdb
 from . import utils_spatial_loss as util_s
 torch.autograd.set_detect_anomaly(True)
 from pytorch3d.transforms import axis_angle_to_quaternion
+from pytorch3d.ops import knn_points
+
+import pickle
+
+def to_tensor(array, dtype=torch.float32):
+    if 'torch.tensor' not in str(type(array)):
+        return torch.tensor(array, dtype=dtype)
+
+
+def to_np(array, dtype=np.float32):
+    if 'scipy.sparse' in str(type(array)):
+        array = array.todense()
+    return np.array(array, dtype=dtype)
+
+class Struct(object):
+    def __init__(self, **kwargs):
+        for key, val in kwargs.items():
+            setattr(self, key, val)
+
+class Masking(nn.Module):
+    def __init__(self, model_cfg):
+        super(Masking, self).__init__()
+        with open(f'{model_cfg.flame_mask}', 'rb') as f:
+            ss = pickle.load(f, encoding='latin1')
+            self.masks = Struct(**ss)
+        with open(f'{model_cfg.flame_model_path}', 'rb') as f:
+            ss = pickle.load(f, encoding='latin1')
+            flame_model = Struct(**ss)
+        self.dtype = torch.float32
+        self.register_buffer('vertices', to_tensor(to_np(flame_model.v_template), dtype=self.dtype))
+    def get_mask_eyes(self):
+        left = self.masks.left_eyeball
+        right = self.masks.right_eyeball
+
+        return np.unique(np.concatenate((left, right)))
+
+    def get_mask_eyes_rendering(self):
+        eyes_mask = torch.zeros_like(self.vertices)[None]
+        eyes_mask[:, self.get_mask_eyes(), :] = 1.0
+
+        return eyes_mask
+
+    def to_render_mask(self, mask):
+        face_mask = torch.zeros_like(self.vertices)[None]
+        face_mask[:, mask, :] = 1.0
+        return face_mask
+
+    def get_mask_face(self):
+        return self.masks.face
+
+
+class UVLoss():
+
+    def __init__(self, model_cfg, stricter_mask : bool = False, delta_uv=0.00005, delta_nocs=0.0001, dist_uv=15):
+        self.delta = delta_uv
+        self.delta_nocs = delta_nocs
+        self.dist_uv = dist_uv
+        self.valid_verts = None
+        self.valid_verts_nocs = None
+        self.stricter_mask = stricter_mask
+        """
+        FLAME_UV_COORDS = f'{CODE_BASE}/assets/flame_uv_coords.npy'
+        VALID_VERTS_NARROW = f'{CODE_BASE}/assets/uv_valid_verty_noEyes.npy'
+        VALID_VERTS = f'{CODE_BASE}/assets/uv_valid_verty_noEyes_noEyeRegion_debug_wEars.npy'
+        """
+        if self.stricter_mask:
+            self.valid_verts = np.load(f'{model_cfg.VALID_VERTS_NARROW}')
+        else:
+            self.valid_verts = np.load(f'{model_cfg.VALID_VERTS}')
+        self.can_uv = torch.from_numpy(np.load(model_cfg.FLAME_UV_COORDS)[self.valid_verts, :]).cuda().unsqueeze(0).float()
+        self.can_uv[..., 1] = (self.can_uv[..., 1] * -1) + 1
+
+        self.verts_2d = []
+        self.gt_2_verts = None
+
+        self.valid_vertex_index = torch.from_numpy(self.valid_verts).long().cuda()
+
+
+
+    def finish_stage1(self, delta_uv_fine=None, dist_uv_fine=None):
+        self.verts_2d = torch.cat(self.verts_2d, dim=0)
+        if delta_uv_fine is not None:
+            self.delta = delta_uv_fine
+            self.dist_uv = dist_uv_fine
+
+    def is_next(self):
+        self.gt_2_verts = None
+
+    # @torch.compiler.disable
+    def compute_corresp(self, gt, selected_frames=None):
+        '''
+        gt는 uv_map, flame can uv에서 vertex 들의 uv 값과 비교해서 픽셀을 찾는다.
+        '''
+        self.gt = gt
+
+        gt_uv = gt[:, :2, :, :].permute(0, 2, 3, 1) # (b, h, w, 2)
+        gt_uv = gt_uv.reshape(gt_uv.shape[0], -1, 2)  # B x n_pixel x 2
+        can_uv = self.can_uv.repeat(gt_uv.shape[0], 1, 1) # 변형 없는 flame uv
+
+        knn_result = knn_points(can_uv, gt_uv)
+        pixel_position_width = knn_result.idx % gt.shape[-1]
+        pixel_position_height = knn_result.idx // gt.shape[-2]
+        self.dists = knn_result.dists.clone()
+
+        self.gt_2_verts = torch.cat([pixel_position_width, pixel_position_height], dim=-1) # 가까운 pixel 위치 저장
+        # if selected_frames is None:
+        #     self.verts_2d.append(torch.cat([pixel_position_width, pixel_position_height], dim=-1))
+
+
+
+    def compute_loss(self, proj_vertices, is_visible_verts_idx=None, selected_frames=None, uv_map=None, l2_loss=False):
+        '''
+        global 아닐때는 selected frame 없음.
+        찾은 픽셀들에 대해서 픽셀 간의 차이 계산
+        '''
+
+        if is_visible_verts_idx is not None:
+            not_occluded = is_visible_verts_idx[:, self.valid_vertex_index].float()
+        else:
+            not_occluded = torch.ones_like(self.valid_vertex_index).float().unsqueeze(0)
+
+
+        if selected_frames is not None:
+            gt_2_verts = self.verts_2d[selected_frames, :, :]
+        else:
+            gt_2_verts = self.gt_2_verts
+
+        valid_proj_v = proj_vertices[:, self.valid_vertex_index, ..., :2]
+        v_dist_2d = (gt_2_verts - valid_proj_v)
+        if l2_loss:
+            uv_loss = (
+                ( v_dist_2d/ self.gt.shape[-1]) * (self.dists < self.delta) *
+                (v_dist_2d.abs().sum(dim=-1) < self.dist_uv).unsqueeze(-1) *
+                not_occluded.unsqueeze(-1)
+            ).square().mean() * 100
+        else:
+            uv_loss = (
+                    (v_dist_2d / self.gt.shape[-1]) * (self.dists < self.delta) *
+                    (v_dist_2d.abs().sum(dim=-1) < self.dist_uv).unsqueeze(-1) *
+                    not_occluded.unsqueeze(-1)
+            ).abs().mean()
+        return uv_loss
+
+
+    def compute_loss_lstsq(self, proj_vertices):
+        uv_loss = ((self.gt_2_verts / self.gt.shape[-1] - proj_vertices[:, torch.from_numpy(self.valid_verts).long().cuda(), :] /
+                    self.gt.shape[-1]) * (self.dists < self.delta)   *
+                    (
+                               (self.gt_2_verts - proj_vertices[:, torch.from_numpy(self.valid_verts).long().cuda(), :]).abs().sum(
+                                   dim=-1) < 30).unsqueeze(-1)
+                   )
+        #print(uv_loss)
+        return uv_loss
 
 
 def efficient_spatial_consistency_loss(
@@ -29,7 +182,7 @@ def efficient_spatial_consistency_loss(
         verts = verts.view(-1, 7, 5023, 3) # [frame*view, 5023 (=vertices), 3 (=locdation)] -> [frame, 7 (=view), 5023, 3]
         sim = util_s.visibility_check(orig_verts, face)
         sim = sim.view(-1, 7, 5023) # [frame, view, vertices]
-    else:
+    else: # Celebv_HQ, Nersemble
         verts = verts.view(-1, 1, 5023, 3) # [frame*view, 5023 (=vertices), 3 (=locdation)] -> [frame, 7 (=view), 5023, 3]
         sim = util_s.visibility_check(orig_verts, face)
         sim = sim.view(-1, 1, 5023) # [frame, view, vertices]
